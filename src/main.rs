@@ -36,6 +36,24 @@ async fn create_user(
         .map_err(|_| rocket::http::Status::InternalServerError)
 }
 
+use crate::models::{Post, NewPost};
+
+#[post("/posts", format = "json", data = "<new_post>")]
+async fn create_post(
+    pool: &State<DbPool>,
+    new_post: Json<NewPost>,
+) -> Result<Json<Post>, rocket::http::Status> {
+    use crate::schema::posts::dsl::*;
+
+    let mut conn = pool.get().map_err(|_| rocket::http::Status::InternalServerError)?;
+
+    diesel::insert_into(posts)
+        .values(&new_post.into_inner())
+        .get_result::<Post>(&mut conn)
+        .map(Json)
+        .map_err(|_| rocket::http::Status::InternalServerError)
+}
+
 #[launch]
 fn rocket() -> Rocket<Build> {
     dotenv().ok();
@@ -48,5 +66,5 @@ fn rocket() -> Rocket<Build> {
 
     rocket::build()
         .manage(pool)
-        .mount("/", routes![create_user])
+        .mount("/", routes![create_user, create_post])
 }
