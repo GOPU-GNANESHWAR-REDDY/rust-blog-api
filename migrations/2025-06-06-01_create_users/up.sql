@@ -1,6 +1,6 @@
-CREATE TABLE posts (
+CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    title VARCHAR NOT NULL,
-    body TEXT NOT NULL
+    username VARCHAR NOT NULL,
+    first_name VARCHAR NOT NULL,
+    last_name VARCHAR
 );

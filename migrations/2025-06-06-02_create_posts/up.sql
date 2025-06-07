@@ -1,1 +1,6 @@
--- Your SQL goes here
+CREATE TABLE posts (
+    id SERIAL PRIMARY KEY,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    title VARCHAR NOT NULL,
+    body TEXT NOT NULL
+);
