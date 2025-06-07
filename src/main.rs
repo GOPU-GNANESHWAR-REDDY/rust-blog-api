@@ -14,6 +14,8 @@ use rocket::{Build, Rocket, State};
 use rocket::serde::json::Json;
 use rocket::http::Status;
 use std::env;
+use crate::models::PostWithTags;
+
 
 use crate::models::{User, NewUser, Post, NewPost, PaginatedResponse, PaginationMeta};
 
@@ -57,8 +59,10 @@ async fn list_posts(
     page: Option<i64>,
     limit: Option<i64>,
     search: Option<String>,
-) -> Result<Json<PaginatedResponse<Post>>, Status> {
+) -> Result<Json<PaginatedResponse<PostWithTags>>, Status> {
     use crate::schema::posts::dsl::*;
+    use crate::schema::posts_tags::dsl::*;
+    use crate::schema::tags::dsl::{tags as tags_table, id as tag_id, name as tag_name};
 
     let mut conn = pool.get().map_err(|_| Status::InternalServerError)?;
 
@@ -69,18 +73,49 @@ async fn list_posts(
     let filter = search.unwrap_or_default();
     let like_pattern = format!("%{}%", filter);
 
+    // Fetch base posts
+    let all_posts = posts
+        .filter(title.ilike(&like_pattern).or(body.ilike(&like_pattern)))
+        .offset(offset)
+        .limit(limit)
+        .load::<Post>(&mut conn)
+        .map_err(|_| Status::InternalServerError)?;
+
     let total_docs = posts
         .filter(title.ilike(&like_pattern).or(body.ilike(&like_pattern)))
         .count()
         .get_result::<i64>(&mut conn)
         .unwrap_or(0);
 
-    let post_list = posts
-        .filter(title.ilike(&like_pattern).or(body.ilike(&like_pattern)))
-        .offset(offset)
-        .limit(limit)
-        .load::<Post>(&mut conn)
+    // Get all post IDs
+    let post_ids: Vec<i32> = all_posts.iter().map(|p| p.id).collect();
+
+    // Fetch all tag mappings for these posts
+    let joined_tags = posts_tags
+        .filter(post_id.eq_any(&post_ids))
+        .inner_join(tags_table.on(tag_id.eq(tag_id)))
+        .select((post_id, tag_name))
+        .load::<(i32, String)>(&mut conn)
         .map_err(|_| Status::InternalServerError)?;
+
+    // Group tags by post_id
+    use std::collections::HashMap;
+    let mut tag_map: HashMap<i32, Vec<String>> = HashMap::new();
+    for (pid, tname) in joined_tags {
+        tag_map.entry(pid).or_default().push(tname);
+    }
+
+    // Combine posts and tags
+    let post_with_tags: Vec<PostWithTags> = all_posts
+        .into_iter()
+        .map(|p| PostWithTags {
+            id: p.id,
+            created_by: p.created_by,
+            title: p.title,
+            body: p.body,
+            tags: tag_map.remove(&p.id).unwrap_or_default(),
+        })
+        .collect();
 
     let total_pages = if total_docs == 0 {
         0
@@ -89,7 +124,7 @@ async fn list_posts(
     };
 
     let from = offset + 1;
-    let to = from + post_list.len() as i64 - 1;
+    let to = from + post_with_tags.len() as i64 - 1;
 
     let meta = PaginationMeta {
         current_page: page,
@@ -101,10 +136,11 @@ async fn list_posts(
     };
 
     Ok(Json(PaginatedResponse {
-        records: post_list,
+        records: post_with_tags,
         meta,
     }))
 }
+
 
 #[launch]
 fn rocket() -> Rocket<Build> {
