@@ -7,3 +7,6 @@ custom_type_derives = ["diesel::query_builder::QueryId", "Clone"]
 
 [migrations_directory]
 dir = "/home/kali/Desktop/rust_blog_api/migrations"
+
+[print_schema]
+file = "src/schema.rs"
