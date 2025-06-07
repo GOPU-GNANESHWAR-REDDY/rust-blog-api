@@ -50,3 +50,26 @@ pub struct PaginationMeta {
     pub total_pages: i64,
     pub total_docs: i64,
 }
+
+use crate::schema::tags;
+use crate::schema::posts_tags;
+
+#[derive(Queryable, Serialize)]
+pub struct Tag {
+    pub id: i32,
+    pub name: String,
+}
+
+#[derive(Insertable, Deserialize)]
+#[diesel(table_name = tags)]
+pub struct NewTag {
+    pub name: String,
+}
+
+#[derive(Identifiable, Associations, Queryable, Debug)]
+#[diesel(table_name = posts_tags)]
+#[diesel(primary_key(post_id, tag_id))]
+pub struct PostTag {
+    pub post_id: i32,
+    pub tag_id: i32,
+}
