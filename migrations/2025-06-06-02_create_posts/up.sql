@@ -1,6 +1,5 @@
-CREATE TABLE posts (
-    id SERIAL PRIMARY KEY,
-    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
-    title VARCHAR NOT NULL,
-    body TEXT NOT NULL
+CREATE TABLE posts_tags (
+    fk_post_id INTEGER NOT NULL REFERENCES posts(id),
+    tag VARCHAR NOT NULL,
+    PRIMARY KEY (fk_post_id, tag)
 );
