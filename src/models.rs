@@ -1,9 +1,9 @@
+// === src/models.rs ===
+
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
+use crate::schema::{users, posts, tags, posts_tags};
 
-use crate::schema::{posts, users, tags, posts_tags};
-
-// ---------- USERS ----------
 #[derive(Queryable, Serialize)]
 pub struct User {
     pub id: i32,
@@ -20,7 +20,6 @@ pub struct NewUser {
     pub last_name: Option<String>,
 }
 
-// ---------- POSTS ----------
 #[derive(Queryable, Serialize)]
 pub struct Post {
     pub id: i32,
@@ -37,7 +36,6 @@ pub struct NewPost {
     pub body: String,
 }
 
-// ---------- TAGS ----------
 #[derive(Queryable, Serialize)]
 pub struct Tag {
     pub id: i32,
@@ -50,18 +48,24 @@ pub struct NewTag {
     pub name: String,
 }
 
-// ---------- POST-TAGS (JOIN TABLE) ----------
-#[derive(Identifiable, Associations, Queryable, Debug)]
+#[derive(Queryable, Identifiable, Associations, Debug)]
+#[diesel(belongs_to(Post))]
+#[diesel(belongs_to(Tag))]
 #[diesel(table_name = posts_tags)]
-#[diesel(primary_key(post_id, tag_id))]
-#[diesel(belongs_to(Post, foreign_key = post_id))]
-#[diesel(belongs_to(Tag, foreign_key = tag_id))]
 pub struct PostTag {
+    pub id: i32,
     pub post_id: i32,
     pub tag_id: i32,
 }
 
-// ---------- PAGINATION ----------
+#[derive(Deserialize)]
+pub struct CreatePostInput {
+    pub created_by: Option<i32>,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+}
+
 #[derive(Serialize)]
 pub struct PaginatedResponse<T> {
     pub records: Vec<T>,
@@ -78,12 +82,8 @@ pub struct PaginationMeta {
     pub total_docs: i64,
 }
 
-// ---------- COMBINED POST + TAGS ----------
 #[derive(Serialize)]
 pub struct PostWithTags {
-    pub id: i32,
-    pub created_by: Option<i32>,
-    pub title: String,
-    pub body: String,
+    pub post: Post,
     pub tags: Vec<String>,
 }
