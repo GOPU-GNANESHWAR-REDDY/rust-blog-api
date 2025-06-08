@@ -16,10 +16,7 @@ use rocket::form::FromForm;
 use rocket::http::Status;
 use std::env;
 
-use crate::models::{
-    CreatePostInput, NewPost, NewUser, PaginationMeta, PaginatedResponse,
-    Post, PostWithTags, User, NewTag,
-};
+use crate::models::*;
 
 type DbPool = Pool<ConnectionManager<PgConnection>>;
 
@@ -29,6 +26,7 @@ async fn create_user(
     new_user: Json<NewUser>,
 ) -> Result<Json<User>, Status> {
     use crate::schema::users::dsl::*;
+
     let mut conn = pool.get().map_err(|_| Status::InternalServerError)?;
     diesel::insert_into(users)
         .values(&new_user.into_inner())
@@ -44,7 +42,7 @@ async fn create_post(
 ) -> Result<Json<Post>, Status> {
     use crate::schema::posts::dsl::*;
     use crate::schema::tags::dsl::{tags as tags_table, name as tag_name, id as tag_id};
-    use crate::schema::posts_tags::dsl::posts_tags;
+    use crate::schema::posts_tags;
 
     let mut conn = pool.get().map_err(|_| Status::InternalServerError)?;
 
@@ -53,6 +51,7 @@ async fn create_post(
         title: input.title.clone(),
         body: input.body.clone(),
     };
+
     let created_post = diesel::insert_into(posts)
         .values(&new_post)
         .get_result::<Post>(&mut conn)
@@ -70,15 +69,12 @@ async fn create_post(
     let tag_ids: Vec<i32> = tags_table
         .filter(tag_name.eq_any(&input.tags))
         .select(tag_id)
-        .load::<i32>(&mut conn)
+        .load(&mut conn)
         .map_err(|_| Status::InternalServerError)?;
 
     for tid in tag_ids {
-        diesel::insert_into(posts_tags)
-            .values((
-                crate::schema::posts_tags::post_id.eq(created_post.id),
-                crate::schema::posts_tags::tag_id.eq(tid),
-            ))
+        diesel::insert_into(posts_tags::table)
+            .values((posts_tags::post_id.eq(created_post.id), posts_tags::tag_id.eq(tid)))
             .execute(&mut conn)
             .map_err(|_| Status::InternalServerError)?;
     }
@@ -101,13 +97,12 @@ async fn list_posts(
     use crate::schema::posts::dsl::*;
 
     let mut conn = pool.get().map_err(|_| Status::InternalServerError)?;
-
     let page = query.page.unwrap_or(1);
     let limit = query.limit.unwrap_or(10);
     let offset = (page - 1) * limit;
 
-    let filter = query.search.clone().unwrap_or_default();
-    let like_pattern = format!("%{}%", filter);
+    let like_filter = query.search.clone().unwrap_or_default();
+    let like_pattern = format!("%{}%", like_filter);
 
     let total_docs = posts
         .filter(title.ilike(&like_pattern).or(body.ilike(&like_pattern)))
@@ -115,82 +110,39 @@ async fn list_posts(
         .get_result::<i64>(&mut conn)
         .unwrap_or(0);
 
-    let post_list = posts
+    let items = posts
         .filter(title.ilike(&like_pattern).or(body.ilike(&like_pattern)))
         .offset(offset)
         .limit(limit)
         .load::<Post>(&mut conn)
         .map_err(|_| Status::InternalServerError)?;
 
-    let total_pages = if total_docs == 0 {
-        0
-    } else {
-        (total_docs as f64 / limit as f64).ceil() as i64
-    };
-
+    let total_pages = if total_docs == 0 { 0 } else { (total_docs as f64 / limit as f64).ceil() as i64 };
     let from = offset + 1;
-    let to = from + post_list.len() as i64 - 1;
-
-    let meta = PaginationMeta {
-        current_page: page,
-        per_page: limit,
-        from,
-        to,
-        total_pages,
-        total_docs,
-    };
+    let to = from + items.len() as i64 - 1;
 
     Ok(Json(PaginatedResponse {
-        records: post_list,
-        meta,
-    }))
-}
-
-#[get("/posts/<post_id>")]
-async fn get_post_by_id(
-    pool: &State<DbPool>,
-    post_id: i32,
-) -> Result<Json<PostWithTags>, Status> {
-    use crate::schema::posts::dsl::*;
-    use crate::schema::tags::dsl::{tags as tags_table, name as tag_name};
-    use crate::schema::posts_tags::dsl::{posts_tags, post_id as pt_post_id, tag_id as pt_tag_id};
-
-    let mut conn = pool.get().map_err(|_| Status::InternalServerError)?;
-
-    let post_item = posts
-        .filter(id.eq(post_id))
-        .first::<Post>(&mut conn)
-        .map_err(|_| Status::NotFound)?;
-
-    let post_tag_ids = posts_tags
-        .filter(pt_post_id.eq(post_id))
-        .select(pt_tag_id)
-        .load::<i32>(&mut conn)
-        .map_err(|_| Status::InternalServerError)?;
-
-    let tag_names = tags_table
-        .filter(crate::schema::tags::id.eq_any(post_tag_ids))
-        .select(tag_name)
-        .load::<String>(&mut conn)
-        .map_err(|_| Status::InternalServerError)?;
-
-    Ok(Json(PostWithTags {
-        id: post_item.id,
-        created_by: post_item.created_by,
-        title: post_item.title,
-        body: post_item.body,
-        tags: tag_names,
+        records: items,
+        meta: PaginationMeta {
+            current_page: page,
+            per_page: limit,
+            from,
+            to,
+            total_pages,
+            total_docs,
+        },
     }))
 }
 
 #[launch]
 fn rocket() -> Rocket<Build> {
     dotenv().ok();
+
     let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
     let manager = ConnectionManager::<PgConnection>::new(database_url);
-    let pool = Pool::builder().build(manager).expect("Failed to create pool.");
+    let pool = Pool::builder().build(manager).expect("Failed to create pool");
 
     rocket::build()
         .manage(pool)
-        .mount("/", routes![create_user, create_post, list_posts, get_post_by_id])
+        .mount("/", routes![create_user, create_post, list_posts])
 }

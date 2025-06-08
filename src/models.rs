@@ -1,8 +1,7 @@
-// === src/models.rs ===
-
 use diesel::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::schema::{users, posts, tags, posts_tags};
+
+use crate::schema::{posts, users, tags, posts_tags};
 
 #[derive(Queryable, Serialize)]
 pub struct User {
@@ -48,24 +47,6 @@ pub struct NewTag {
     pub name: String,
 }
 
-#[derive(Queryable, Identifiable, Associations, Debug)]
-#[diesel(belongs_to(Post))]
-#[diesel(belongs_to(Tag))]
-#[diesel(table_name = posts_tags)]
-pub struct PostTag {
-    pub id: i32,
-    pub post_id: i32,
-    pub tag_id: i32,
-}
-
-#[derive(Deserialize)]
-pub struct CreatePostInput {
-    pub created_by: Option<i32>,
-    pub title: String,
-    pub body: String,
-    pub tags: Vec<String>,
-}
-
 #[derive(Serialize)]
 pub struct PaginatedResponse<T> {
     pub records: Vec<T>,
@@ -82,8 +63,19 @@ pub struct PaginationMeta {
     pub total_docs: i64,
 }
 
-#[derive(Serialize)]
-pub struct PostWithTags {
-    pub post: Post,
+#[derive(Deserialize)]
+pub struct CreatePostInput {
+    pub created_by: Option<i32>,
+    pub title: String,
+    pub body: String,
     pub tags: Vec<String>,
 }
+
+#[derive(Serialize)]
+pub struct PostWithTags {
+    pub id: i32,
+    pub title: String,
+    pub body: String,
+    pub tags: Vec<String>,
+}
+
